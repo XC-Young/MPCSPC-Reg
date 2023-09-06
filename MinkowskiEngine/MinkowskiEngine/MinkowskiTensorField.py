@@ -23,7 +23,7 @@
 # of the code.
 import os
 import numpy as np
-from collections import Sequence
+from collections.abc import Sequence
 from typing import Union, List, Tuple
 
 import torch
@@ -48,6 +48,29 @@ from MinkowskiTensor import (
 from MinkowskiSparseTensor import SparseTensor
 from sparse_matrix_functions import MinkowskiSPMMFunction, MinkowskiSPMMAverageFunction
 from MinkowskiPooling import MinkowskiDirectMaxPoolingFunction
+
+
+def create_splat_coordinates(coordinates: torch.Tensor) -> torch.Tensor:
+    r"""Create splat coordinates. splat coordinates could have duplicate coordinates."""
+    dimension = coordinates.shape[1] - 1
+    region_offset = [
+        [
+            0,
+        ]
+        * (dimension + 1)
+    ]
+    for d in reversed(range(1, dimension + 1)):
+        new_offset = []
+        for offset in region_offset:
+            offset = offset.copy()  # Do not modify the original
+            offset[d] = 1
+            new_offset.append(offset)
+        region_offset.extend(new_offset)
+    region_offset = torch.IntTensor(region_offset).to(coordinates.device)
+    coordinates = torch.floor(coordinates).int().unsqueeze(1) + region_offset.unsqueeze(
+        0
+    )
+    return coordinates.reshape(-1, dimension + 1)
 
 
 class TensorField(Tensor):
@@ -137,6 +160,8 @@ class TensorField(Tensor):
             assert isinstance(coordinates, torch.Tensor)
         if coordinate_field_map_key is not None:
             assert isinstance(coordinate_field_map_key, CoordinateMapKey)
+            assert coordinate_manager is not None, "Must provide coordinate_manager if coordinate_field_map_key is provided"
+            assert coordinates is None, "Must not provide coordinates if coordinate_field_map_key is provided"
         if coordinate_manager is not None:
             assert isinstance(coordinate_manager, CoordinateManager)
         if coordinates is None and (
@@ -221,6 +246,11 @@ class TensorField(Tensor):
         self.coordinate_field_map_key = coordinate_field_map_key
         self._batch_rows = None
         self._inverse_mapping = {}
+        self._splat = {}
+
+    @property
+    def coordinate_key(self):
+        return self.coordinate_field_map_key
 
     @property
     def C(self):
@@ -245,7 +275,9 @@ class TensorField(Tensor):
     @property
     def _batchwise_row_indices(self):
         if self._batch_rows is None:
-            _, self._batch_rows = self._manager.origin_field_map(self.coordinate_field_map_key)
+            _, self._batch_rows = self._manager.origin_field_map(
+                self.coordinate_field_map_key
+            )
         return self._batch_rows
 
     def _get_coordinate_field(self):
@@ -255,11 +287,14 @@ class TensorField(Tensor):
         self,
         tensor_stride: Union[int, Sequence, np.array] = 1,
         coordinate_map_key: CoordinateMapKey = None,
-        quantization_mode=None,
+        quantization_mode: SparseTensorQuantizationMode = None,
     ):
         r"""Converts the current sparse tensor field to a sparse tensor."""
         if quantization_mode is None:
             quantization_mode = self.quantization_mode
+        assert (
+            quantization_mode != SparseTensorQuantizationMode.SPLAT_LINEAR_INTERPOLATION
+        ), "Please use .splat() for splat quantization."
 
         if coordinate_map_key is None:
             tensor_stride = convert_to_int_list(tensor_stride, self.D)
@@ -279,10 +314,24 @@ class TensorField(Tensor):
                 coordinate_map_key,
             )
             N_rows = self._manager.size(coordinate_map_key)
-        self._inverse_mapping[coordinate_map_key] = inverse_mapping
 
+        assert N_rows > 0, f"Invalid out coordinate map key. Found {N_row} elements."
+
+        if len(inverse_mapping) == 0:
+            # When the input has the same shape as the output
+            self._inverse_mapping[coordinate_map_key] = torch.arange(
+                len(self._F),
+                dtype=inverse_mapping.dtype,
+                device=inverse_mapping.device,
+            )
+            return SparseTensor(
+                self._F,
+                coordinate_map_key=coordinate_map_key,
+                coordinate_manager=self._manager,
+            )
+
+        # Create features
         if quantization_mode == SparseTensorQuantizationMode.UNWEIGHTED_SUM:
-            spmm = MinkowskiSPMMFunction()
             N = len(self._F)
             cols = torch.arange(
                 N,
@@ -291,9 +340,10 @@ class TensorField(Tensor):
             )
             vals = torch.ones(N, dtype=self._F.dtype, device=self._F.device)
             size = torch.Size([N_rows, len(inverse_mapping)])
-            features = spmm.apply(inverse_mapping, cols, vals, size, self._F)
+            features = MinkowskiSPMMFunction().apply(
+                inverse_mapping, cols, vals, size, self._F
+            )
         elif quantization_mode == SparseTensorQuantizationMode.UNWEIGHTED_AVERAGE:
-            spmm_avg = MinkowskiSPMMAverageFunction()
             N = len(self._F)
             cols = torch.arange(
                 N,
@@ -301,7 +351,9 @@ class TensorField(Tensor):
                 device=inverse_mapping.device,
             )
             size = torch.Size([N_rows, len(inverse_mapping)])
-            features = spmm_avg.apply(inverse_mapping, cols, size, self._F)
+            features = MinkowskiSPMMAverageFunction().apply(
+                inverse_mapping, cols, size, self._F
+            )
         elif quantization_mode == SparseTensorQuantizationMode.RANDOM_SUBSAMPLE:
             features = self._F[unique_index]
         elif quantization_mode == SparseTensorQuantizationMode.MAX_POOL:
@@ -318,13 +370,40 @@ class TensorField(Tensor):
             # No quantization
             raise ValueError("Invalid quantization mode")
 
-        sparse_tensor = SparseTensor(
+        self._inverse_mapping[coordinate_map_key] = inverse_mapping
+
+        return SparseTensor(
             features,
             coordinate_map_key=coordinate_map_key,
             coordinate_manager=self._manager,
         )
 
-        return sparse_tensor
+    def splat(self):
+        r"""
+        For slice, use Y.slice(X) where X is the tensor field and Y is the
+        resulting sparse tensor.
+        """
+        splat_coordinates = create_splat_coordinates(self.C)
+        (coordinate_map_key, _) = self._manager.insert_and_map(splat_coordinates)
+        N_rows = self._manager.size(coordinate_map_key)
+
+        tensor_map, field_map, weights = self._manager.interpolation_map_weight(
+            coordinate_map_key, self._C
+        )
+        # features
+        N = len(self._F)
+        assert weights.dtype == self._F.dtype
+        size = torch.Size([N_rows, N])
+        # Save the results for slice
+        self._splat[coordinate_map_key] = (tensor_map, field_map, weights, size)
+        features = MinkowskiSPMMFunction().apply(
+            tensor_map, field_map, weights, size, self._F
+        )
+        return SparseTensor(
+            features,
+            coordinate_map_key=coordinate_map_key,
+            coordinate_manager=self._manager,
+        )
 
     def inverse_mapping(self, sparse_tensor_map_key: CoordinateMapKey):
         if sparse_tensor_map_key not in self._inverse_mapping:
@@ -335,33 +414,36 @@ class TensorField(Tensor):
                     self.coordinate_field_map_key
                 )
                 one_key = None
-                for key in sparse_keys:
-                    if np.prod(key.get_tensor_stride()) == 1:
-                        one_key = key
-
-                if one_key is not None:
-                    if one_key not in self._inverse_mapping:
-                        (
-                            _,
-                            self._inverse_mapping[one_key],
-                        ) = self._manager.get_field_to_sparse_map(
-                            self.coordinate_field_map_key, one_key
-                        )
-
-                    _, stride_map = self.coordinate_manager.stride_map(
-                        one_key, sparse_tensor_map_key
-                    )
-                    field_map = self._inverse_mapping[one_key]
-                    self._inverse_mapping[sparse_tensor_map_key] = stride_map[field_map]
+                if len(sparse_keys) > 0:
+                    for key in sparse_keys:
+                        if np.prod(key.get_tensor_stride()) == 1:
+                            one_key = key
                 else:
-                    raise ValueError(
-                        f"The field to sparse tensor mapping does not exists for the key: {sparse_tensor_map_key}. Please run TensorField.sparse() before you call slice."
+                    one_key = CoordinateMapKey(
+                        [
+                            1,
+                        ]
+                        * self.D,
+                        "",
                     )
+
+                if one_key not in self._inverse_mapping:
+                    (
+                        _,
+                        self._inverse_mapping[one_key],
+                    ) = self._manager.get_field_to_sparse_map(
+                        self.coordinate_field_map_key, one_key
+                    )
+                _, stride_map = self.coordinate_manager.stride_map(
+                    one_key, sparse_tensor_map_key
+                )
+                field_map = self._inverse_mapping[one_key]
+                self._inverse_mapping[sparse_tensor_map_key] = stride_map[field_map]
             else:
                 # Extract the mapping
                 (
-                    self._inverse_mapping[sparse_tensor_map_key],
                     _,
+                    self._inverse_mapping[sparse_tensor_map_key],
                 ) = self._manager.get_field_to_sparse_map(
                     self.coordinate_field_map_key, sparse_tensor_map_key
                 )
@@ -420,4 +502,5 @@ class TensorField(Tensor):
         "quantization_mode",
         "_inverse_mapping",
         "_batch_rows",
+        "_splat",
     )

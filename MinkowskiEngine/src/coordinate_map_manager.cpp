@@ -71,7 +71,7 @@ struct insert_and_map_functor<coordinate_type, coordinate_field_type,
     LOG_DEBUG("mapping size:", map_inverse_map.first.size());
 
     // insert moves map
-    manager.insert(map_key, map);
+    THRUST_CHECK(manager.insert(map_key, map));
 
     auto const &mapping = map_inverse_map.first;
     auto const &inverse_mapping = map_inverse_map.second;
@@ -117,7 +117,7 @@ struct insert_field_functor<
     auto map = CoordinateFieldMapCPU<coordinate_field_type, coordinate_type,
                                      std::allocator>(N, coordinate_size,
                                                      map_key.first);
-    map.insert(p_coordinate, p_coordinate + N * coordinate_size);
+    THRUST_CHECK(map.insert(p_coordinate, p_coordinate + N * coordinate_size));
 
     LOG_DEBUG("insert map with tensor_stride", map_key.first);
     manager.insert_field_map(map_key, map);
@@ -391,9 +391,11 @@ CoordinateMapManager<coordinate_type, coordinate_field_type, TemplatedAllocator,
                                      TemplatedAllocator, CoordinateMapType>()(
           map_key, coordinate, *this);
 
+  LOG_DEBUG("map_inverse_map initialized");
   py::object py_key = py::cast(new CoordinateMapKey(coordinate_size, map_key));
+  LOG_DEBUG("py key initialized");
 
-  return std::make_pair(py_key, std::move(map_inverse_map));
+  return std::make_pair(py_key, map_inverse_map);
 }
 
 // stride
@@ -500,6 +502,7 @@ CoordinateMapManager<coordinate_type, coordinate_field_type, TemplatedAllocator,
     }
   }
 
+  LOG_DEBUG("return origin()");
   // (key, new map generated flag)
   return std::make_pair(origin_map_key, !exists_origin_map);
 }
@@ -1262,7 +1265,8 @@ CoordinateMapManager<coordinate_type, coordinate_field_type, TemplatedAllocator,
   }
 
   // Create a merged map with the smallest tensor stride
-  coordinate_map_key_type merged_map_key(merged_map_tensor_stride, "merge");
+  coordinate_map_key_type merged_map_key =
+      get_random_string_id(merged_map_tensor_stride, "merge");
   map_type const &map = m_coordinate_maps.find(map_keys[0])->second;
   map_type merged_map = map.merge(maps);
   insert(merged_map_key, merged_map);
@@ -1327,6 +1331,7 @@ CoordinateMapManager<coordinate_type, coordinate_field_type, TemplatedAllocator,
   auto const &map = it->second;
   auto const nrows = map.size();
   auto const ncols = map.coordinate_size();
+  LOG_DEBUG("coordinate map nrows:", nrows, "ncols:", ncols);
 
   // CPU torch.IntTensor
   auto options = torch::TensorOptions().dtype(torch::kInt).requires_grad(false);
@@ -1338,10 +1343,13 @@ CoordinateMapManager<coordinate_type, coordinate_field_type, TemplatedAllocator,
     ASSERT(false, ERROR_CPU_ONLY);
 #endif
   }
-  at::Tensor coordinates = torch::empty({(long)nrows, (long)ncols}, options);
+  at::Tensor coordinates =
+      torch::empty({(int64_t)nrows, (int64_t)ncols}, options);
 
+  LOG_DEBUG("Initialized coordinates");
   // copy to the out coords
   map.copy_coordinates(coordinates.template data_ptr<coordinate_type>());
+  LOG_DEBUG("Copied coordinates");
   return coordinates;
 }
 
@@ -1364,7 +1372,7 @@ struct kernel_map_to_tensors<coordinate_type, std::allocator, CoordinateMapCPU,
     for (auto k = 0; k < in_maps.size(); ++k) {
       const auto &in_map = in_maps[k];
       const auto &out_map = out_maps[k];
-      const long N = in_map.size();
+      const int64_t N = in_map.size();
       if (N > 0) {
         at::Tensor kernel_map = torch::empty({2, N}, options);
         int32_t *p_kernel_map = kernel_map.data_ptr<int32_t>();
@@ -1432,7 +1440,8 @@ at::Tensor CoordinateMapManager<coordinate_type, coordinate_field_type,
     ASSERT(false, ERROR_CPU_ONLY);
 #endif
   }
-  at::Tensor coordinates = torch::empty({(long)nrows, (long)ncols}, options);
+  at::Tensor coordinates =
+      torch::empty({(int64_t)nrows, (int64_t)ncols}, options);
 
   // copy to the out coords
   map.copy_coordinates(coordinates.template data_ptr<coordinate_field_type>());

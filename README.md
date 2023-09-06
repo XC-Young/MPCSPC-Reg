@@ -18,7 +18,7 @@ Here we offer the FCGF backbone YOHO. Thus FCGF requirements need to be met:
 
 Specifically, The code has been tested with:
 
-- Ubuntu 20.04, CUDA 11.0, python 3.7.10, Pytorch 1.7.1, GeForce RTX 3080Ti.
+- Ubuntu 20.04, CUDA 11.1, python 3.7.10, Pytorch 1.7.1, GeForce RTX 3080Ti.
 
 ## Installation
 
@@ -32,7 +32,7 @@ Specifically, The code has been tested with:
 - Second, intall Pytorch. We have checked version 1.7.1 and other versions can be referred to [Official Set](https://pytorch.org/get-started/previous-versions/).
 
   ```
-  conda install pytorch==1.7.1 torchvision==0.8.2 torchaudio==0.7.2 cudatoolkit=11.0 -c pytorch
+  conda install pytorch==1.7.1 torchvision==0.8.2 torchaudio==0.7.2 cudatoolkit=11.1 -c pytorch
   ```
 
 - Third, install MinkowskiEngine for FCGF feature extraction, here we offer two ways according to [MinkowskiEngine](https://github.com/NVIDIA/MinkowskiEngine.git) by using the version we offered:
@@ -40,7 +40,7 @@ Specifically, The code has been tested with:
   ```
   cd MinkowskiEngine
   conda install openblas-devel -c anaconda
-  export CUDA_HOME=/usr/local/cuda-11.0 
+  export CUDA_HOME=/usr/local/cuda-11.1
   python setup.py install --blas_include_dirs=${CONDA_PREFIX}/include --blas=openblas
   cd ..
   ```
@@ -60,7 +60,7 @@ Specifically, The code has been tested with:
 - Finally, compile the [CUDA based KNN searcher](https://github.com/vincentfpgarcia/kNN-CUDA):
   ```
   cd knn_search/
-  export CUDA_HOME=/usr/local/cuda-11.0 
+  export CUDA_HOME=/usr/local/cuda-11.1
   python setup.py build_ext --inplace
   cd ..
   ```

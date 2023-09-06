@@ -1,14 +1,20 @@
 [pypi-image]: https://badge.fury.io/py/MinkowskiEngine.svg
 [pypi-url]: https://pypi.org/project/MinkowskiEngine/
+[pypi-download]: https://img.shields.io/pypi/dm/MinkowskiEngine
+[slack-badge]: https://img.shields.io/badge/slack-join%20chats-brightgreen
+[slack-url]: https://join.slack.com/t/minkowskiengine/shared_invite/zt-piq2x02a-31dOPocLt6bRqOGY3U_9Sw
 
 # Minkowski Engine
 
-[![PyPI Version][pypi-image]][pypi-url] [![Join the chat at https://gitter.im/MinkowskiEngineGitter/general](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/MinkowskiEngineGitter/general)
+[![PyPI Version][pypi-image]][pypi-url] [![pypi monthly download][pypi-download]][pypi-url] [![slack chat][slack-badge]][slack-url]
 
 The Minkowski Engine is an auto-differentiation library for sparse tensors. It supports all standard neural network layers such as convolution, pooling, unpooling, and broadcasting operations for sparse tensors. For more information, please visit [the documentation page](http://nvidia.github.io/MinkowskiEngine/overview.html).
 
 ## News
 
+- 2021-08-11 Docker installation instruction added
+- 2021-08-06 All installation errors with pytorch 1.8 and 1.9 have been resolved.
+- 2021-04-08 Due to recent errors in [pytorch 1.8 + CUDA 11](https://github.com/NVIDIA/MinkowskiEngine/issues/330), it is recommended to use [anaconda for installation](#anaconda).
 - 2020-12-24 v0.5 is now available! The new version provides CUDA accelerations for all coordinate management functions.
 
 ## Example Networks
@@ -28,7 +34,7 @@ The Minkowski Engine supports various functions that can be built on a sparse te
 
 Compressing a neural network to speedup inference and minimize memory footprint has been studied widely. One of the popular techniques for model compression is pruning the weights in convnets, is also known as [*sparse convolutional networks*](https://www.cv-foundation.org/openaccess/content_cvpr_2015/papers/Liu_Sparse_Convolutional_Neural_2015_CVPR_paper.pdf). Such parameter-space sparsity used for model compression compresses networks that operate on dense tensors and all intermediate activations of these networks are also dense tensors.
 
-However, in this work, we focus on [*spatially* sparse data](https://arxiv.org/abs/1409.6070), in particular, spatially sparse high-dimensional inputs. We can also represent these data as sparse tensors, and these sparse tensors are commonplace in high-dimensional problems such as 3D perception, registration, and statistical data. We define neural networks specialized for these inputs as *sparse tensor networks*  and these sparse tensor networks process and generate sparse tensors as outputs. To construct a sparse tensor network, we build all standard neural network layers such as MLPs, non-linearities, convolution, normalizations, pooling operations as the same way we define them on a dense tensor and implemented in the Minkowski Engine.
+However, in this work, we focus on [*spatially* sparse data](https://arxiv.org/abs/1409.6070), in particular, spatially sparse high-dimensional inputs and 3D data and convolution on the surface of 3D objects, first proposed in [Siggraph'17](https://wang-ps.github.io/O-CNN.html). We can also represent these data as sparse tensors, and these sparse tensors are commonplace in high-dimensional problems such as 3D perception, registration, and statistical data. We define neural networks specialized for these inputs as *sparse tensor networks*  and these sparse tensor networks process and generate sparse tensors as outputs. To construct a sparse tensor network, we build all standard neural network layers such as MLPs, non-linearities, convolution, normalizations, pooling operations as the same way we define them on a dense tensor and implemented in the Minkowski Engine.
 
 We visualized a sparse tensor network operation on a sparse tensor, convolution, below. The convolution layer on a sparse tensor works similarly to that on a dense tensor. However, on a sparse tensor, we compute convolution outputs on a few specified points which we can control in the [generalized convolution](https://nvidia.github.io/MinkowskiEngine/sparse_tensor_network.html). For more information, please visit [the documentation page on sparse tensor networks](https://nvidia.github.io/MinkowskiEngine/sparse_tensor_network.html) and [the terminology page](https://nvidia.github.io/MinkowskiEngine/terminology.html).
 
@@ -53,10 +59,11 @@ We visualized a sparse tensor network operation on a sparse tensor, convolution,
 ## Requirements
 
 - Ubuntu >= 14.04
-- CUDA >= 11.1 or 11.0 > CUDA >= 10.1.243, [No CUDA 11.0](https://github.com/NVIDIA/MinkowskiEngine/issues/290)
-- 1.8 > pytorch >= 1.7 (if you use conda, install with `conda install -y -c conda-forge -c pytorch pytorch=1.7.1 cudatoolkit=11.0`)
+- CUDA >= 10.1.243 and **the same CUDA version used for pytorch** (e.g. if you use conda cudatoolkit=11.1, use CUDA=11.1 for MinkowskiEngine compilation)
+- pytorch >= 1.7 To specify CUDA version, please use conda for installation. You must match the CUDA version pytorch uses and CUDA version used for Minkowski Engine installation. `conda install -y -c nvidia -c pytorch pytorch=1.8.1 cudatoolkit=10.2`)
 - python >= 3.6
-- GCC >= 7
+- ninja (for installation)
+- GCC >= 7.4.0
 
 
 ## Installation
@@ -67,6 +74,8 @@ If you cannot find a relevant problem, please report the issue on [the github is
 - [PIP](https://github.com/NVIDIA/MinkowskiEngine#pip) installation
 - [Conda](https://github.com/NVIDIA/MinkowskiEngine#anaconda) installation
 - [Python](https://github.com/NVIDIA/MinkowskiEngine#system-python) installation
+- [Docker](https://github.com/NVIDIA/MinkowskiEngine#docker) installation
+
 
 ### Pip
 
@@ -75,7 +84,7 @@ First, install pytorch following the [instruction](https://pytorch.org). Next, i
 
 ```
 sudo apt install build-essential python3-dev libopenblas-dev
-pip install torch
+pip install torch ninja
 pip install -U MinkowskiEngine --install-option="--blas=openblas" -v --no-deps
 
 # For pip installation from the latest source
@@ -99,6 +108,36 @@ pip install -U git+https://github.com/NVIDIA/MinkowskiEngine -v --no-deps \
 
 ### Anaconda
 
+MinkowskiEngine supports both CUDA 10.2 and cuda 11.1, which work for most of latest pytorch versions.
+#### CUDA 10.2
+
+We recommend `python>=3.6` for installation.
+First, follow [the anaconda documentation](https://docs.anaconda.com/anaconda/install/) to install anaconda on your computer.
+
+```
+sudo apt install g++-7  # For CUDA 10.2, must use GCC < 8
+# Make sure `g++-7 --version` is at least 7.4.0
+conda create -n py3-mink python=3.8
+conda activate py3-mink
+
+conda install openblas-devel -c anaconda
+conda install pytorch=1.9.0 torchvision cudatoolkit=10.2 -c pytorch -c nvidia
+
+# Install MinkowskiEngine
+export CXX=g++-7
+# Uncomment the following line to specify the cuda home. Make sure `$CUDA_HOME/nvcc --version` is 10.2
+# export CUDA_HOME=/usr/local/cuda-10.2
+pip install -U git+https://github.com/NVIDIA/MinkowskiEngine -v --no-deps --install-option="--blas_include_dirs=${CONDA_PREFIX}/include" --install-option="--blas=openblas"
+
+# Or if you want local MinkowskiEngine
+git clone https://github.com/NVIDIA/MinkowskiEngine.git
+cd MinkowskiEngine
+export CXX=g++-7
+python setup.py install --blas_include_dirs=${CONDA_PREFIX}/include --blas=openblas
+```
+
+#### CUDA 11.X
+
 We recommend `python>=3.6` for installation.
 First, follow [the anaconda documentation](https://docs.anaconda.com/anaconda/install/) to install anaconda on your computer.
 
@@ -107,9 +146,12 @@ conda create -n py3-mink python=3.8
 conda activate py3-mink
 
 conda install openblas-devel -c anaconda
-conda install -y -c conda-forge -c pytorch pytorch=1.7.1 cudatoolkit=11.0
+conda install pytorch=1.9.0 torchvision cudatoolkit=11.1 -c pytorch -c nvidia
 
 # Install MinkowskiEngine
+
+# Uncomment the following line to specify the cuda home. Make sure `$CUDA_HOME/nvcc --version` is 11.X
+# export CUDA_HOME=/usr/local/cuda-11.1
 pip install -U git+https://github.com/NVIDIA/MinkowskiEngine -v --no-deps --install-option="--blas_include_dirs=${CONDA_PREFIX}/include" --install-option="--blas=openblas"
 
 # Or if you want local MinkowskiEngine
@@ -130,7 +172,7 @@ sudo apt install build-essential python3-dev libopenblas-dev
 curl https://bootstrap.pypa.io/get-pip.py | python3
 
 # Get pip and install python requirements
-python3 -m pip install torch numpy
+python3 -m pip install torch numpy ninja
 
 git clone https://github.com/NVIDIA/MinkowskiEngine.git
 
@@ -141,6 +183,19 @@ python setup.py install
 # export CXX=c++; export CUDA_HOME=/usr/local/cuda-11.1; python setup.py install --blas=openblas --force_cuda
 ```
 
+### Docker
+
+```
+git clone https://github.com/NVIDIA/MinkowskiEngine
+cd MinkowskiEngine
+docker build -t minkowski_engine docker
+```
+
+Once the docker is built, check it loads MinkowskiEngine correctly.
+
+```
+docker run MinkowskiEngine python3 -c "import MinkowskiEngine; print(MinkowskiEngine.__version__)"
+```
 
 ## CPU only build and BLAS configuration (MKL)
 
@@ -173,7 +228,7 @@ class ExampleNetwork(ME.MinkowskiNetwork):
                 kernel_size=3,
                 stride=2,
                 dilation=1,
-                has_bias=False,
+                bias=False,
                 dimension=D),
             ME.MinkowskiBatchNorm(64),
             ME.MinkowskiReLU())
@@ -206,7 +261,7 @@ class ExampleNetwork(ME.MinkowskiNetwork):
 
     # a data loader must return a tuple of coords, features, and labels.
     coords, feat, label = data_loader()
-    input = ME.SparseTensor(feat, coords=coords)
+    input = ME.SparseTensor(feat, coordinates=coords)
     # Forward
     output = net(input)
 
@@ -227,6 +282,18 @@ page](https://github.com/NVIDIA/MinkowskiEngine/issues).
 
 ## Known Issues
 
+### Specifying CUDA architecture list
+
+In some cases, you need to explicitly specify which compute capability your GPU uses. The default list might not contain your architecture.
+
+```bash
+export TORCH_CUDA_ARCH_LIST="5.2 6.0 6.1 7.0 7.5 8.0 8.6+PTX"; python setup.py install --force_cuda
+```
+
+### Unhandled Out-Of-Memory thrust::system exception
+
+There is [a known issue](https://github.com/NVIDIA/thrust/issues/1448) in thrust with CUDA 10 that leads to an unhandled thrust exception. Please refer to the [issue](https://github.com/NVIDIA/MinkowskiEngine/issues/357) for detail.
+
 ### Too much GPU memory usage or Frequent Out of Memory
 
 There are a few causes for this error.
@@ -240,9 +307,7 @@ Specifically, pytorch caches chunks of memory spaces to speed up allocation used
 
 **To prevent this, you must clear the cache at regular interval with `torch.cuda.empty_cache()`.**
 
-2. CUDA 11.0
-
-There is a known CUDA issues that force torch to allocate exorbitant memory when used with MinkowskiEngine. For more detail please refer to [the issue #290](https://github.com/NVIDIA/MinkowskiEngine/issues/290). To fix, please install CUDA toolkit 11.1 and compile MinkowskiEngine.
+### CUDA 11.1 Installation
 
 ```
 wget https://developer.download.nvidia.com/compute/cuda/11.1.1/local_installers/cuda_11.1.1_455.32.00_linux.run

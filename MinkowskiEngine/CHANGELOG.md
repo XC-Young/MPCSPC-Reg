@@ -1,5 +1,43 @@
 # Change Log
 
+## [0.5.5]
+
+- MKL compilation fix (#358)
+- Example updates for `has_bias` (PR #356)
+- Add thrust exception handling (issue #357)
+- `min_coordinate` to device in `dense()`
+- `cpu_kernel_region` `to_gpu` now uses `shared_ptr` allocator for gpu memory
+- Docker installation instruction added
+- Fix for GPU `coo_spmm` when nnz == 0
+    - Fix MinkowskiInterpolationGPU for invalid samples (issue #383)
+- gradcheck wrap func 1.9
+- Handles `dense` for an empty tensor (issue #384)
+- Handles an emtpy tensor for convolution (issue #384)
+- When `coordinates` is provided in `MinkowskiToSparseTensor`, `remove_zeros` will be ignored (issue #387)
+- Pybind equality error from the package (issue #414)
+- Fix undefined coordinate merge for multiple coordinate unions
+- Add cross-shaped kernel support (issue #436)
+
+## [0.5.4]
+
+- Fix `TensorField.sparse()` for no duplicate coordinates
+- Skip unnecessary spmm if `SparseTensor.initialize_coordinates()` has no duplicate coordinates
+- Model summary utility function added
+- TensorField.splat function for splat features to a sparse tensor
+- SparseTensor.interpolate function for extracting interpolated features
+- `coordinate_key` property function for `SparseTensor` and `TensorField`
+- Fix .dense() for GPU tensors. (PR #319)
+
+## [0.5.3]
+
+- Updated README for pytorch 1.8.1 support
+- Use custom `gpu_storage` instead of thrust vector for faster constructors
+- pytorch installation instruction updates
+- fix transpose kernel map with `kernel_size == stride_size`
+- Update reconstruction and vae examples for v0.5 API
+- `stack_unet.py` example, API updates
+- `MinkowskiToFeature` layer
+
 ## [0.5.2]
 
 - spmm average cuda function

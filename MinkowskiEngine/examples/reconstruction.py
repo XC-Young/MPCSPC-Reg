@@ -123,7 +123,7 @@ def resample_mesh(mesh_cad, density=1):
     sample_face_idx = np.zeros((n_samples,), dtype=int)
     acc = 0
     for face_idx, _n_sample in enumerate(n_samples_per_face):
-        sample_face_idx[acc: acc + _n_sample] = face_idx
+        sample_face_idx[acc : acc + _n_sample] = face_idx
         acc += _n_sample
 
     r = np.random.rand(n_samples, 2)
@@ -192,8 +192,7 @@ class ModelNet40Dataset(torch.utils.data.Dataset):
 
         self.root = "./ModelNet40"
         fnames = glob.glob(os.path.join(self.root, "chair/train/*.off"))
-        fnames = sorted([os.path.relpath(fname, self.root)
-                         for fname in fnames])
+        fnames = sorted([os.path.relpath(fname, self.root) for fname in fnames])
         self.files = fnames
         assert len(self.files) > 0, "No file loaded"
         logging.info(
@@ -297,8 +296,7 @@ parser.add_argument("--momentum", type=float, default=0.9)
 parser.add_argument("--weight_decay", type=float, default=1e-4)
 parser.add_argument("--num_workers", type=int, default=1)
 parser.add_argument("--stat_freq", type=int, default=50)
-parser.add_argument("--weights", type=str,
-                    default="modelnet_reconstruction.pth")
+parser.add_argument("--weights", type=str, default="modelnet_reconstruction.pth")
 parser.add_argument("--load_optimizer", type=str, default="true")
 parser.add_argument("--eval", action="store_true")
 parser.add_argument("--max_visualization", type=int, default=4)
@@ -427,22 +425,22 @@ class GenerativeNet(nn.Module):
         # pruning
         self.pruning = ME.MinkowskiPruning()
 
+    @torch.no_grad()
     def get_target(self, out, target_key, kernel_size=1):
-        with torch.no_grad():
-            target = torch.zeros(len(out), dtype=torch.bool, device=out.device)
-            cm = out.coordinate_manager
-            strided_target_key = cm.stride(
-                target_key,
-                out.tensor_stride[0],
-            )
-            kernel_map = cm.kernel_map(
-                out.coordinate_map_key,
-                strided_target_key,
-                kernel_size=kernel_size,
-                region_type=1,
-            )
-            for k, curr_in in kernel_map.items():
-                target[curr_in[0].long()] = 1
+        target = torch.zeros(len(out), dtype=torch.bool, device=out.device)
+        cm = out.coordinate_manager
+        strided_target_key = cm.stride(
+            target_key,
+            out.tensor_stride[0],
+        )
+        kernel_map = cm.kernel_map(
+            out.coordinate_map_key,
+            strided_target_key,
+            kernel_size=kernel_size,
+            region_type=1,
+        )
+        for k, curr_in in kernel_map.items():
+            target[curr_in[0].long()] = 1
         return target
 
     def valid_batch_map(self, batch_map):
@@ -591,8 +589,7 @@ def train(net, dataloader, device, config):
         num_layers, loss = len(out_cls), 0
         losses = []
         for out_cl, target in zip(out_cls, targets):
-            curr_loss = crit(out_cl.F.squeeze(), target.type(
-                out_cl.F.dtype).to(device))
+            curr_loss = crit(out_cl.F.squeeze(), target.type(out_cl.F.dtype).to(device))
             losses.append(curr_loss.item())
             loss += curr_loss / num_layers
 
@@ -637,18 +634,17 @@ def visualize(net, dataloader, device, config):
         in_feat[torch.arange(config.batch_size), data_dict["labels"]] = 1
 
         sin = ME.SparseTensor(
-            feats=in_feat,
-            coords=init_coords,
-            allow_duplicate_coords=True,  # for classification, it doesn't matter
+            features=in_feat,
+            coordinates=init_coords,
             tensor_stride=config.resolution,
-        ).to(device)
+            device=device,
+        )
 
         # Generate target sparse tensor
-        cm = sin.coords_man
-        target_key = cm.create_coords_key(
-            ME.utils.batched_coordinates(data_dict["xyzs"]),
-            force_creation=True,
-            allow_duplicate_coords=True,
+        cm = sin.coordinate_manager
+        target_key, _ = cm.insert_and_map(
+            ME.utils.batched_coordinates(data_dict["xyzs"]).to(device),
+            string_id="target",
         )
 
         # Generate from a dense tensor
@@ -662,7 +658,7 @@ def visualize(net, dataloader, device, config):
 
         batch_coords, batch_feats = sout.decomposed_coordinates_and_features
         for b, (coords, feats) in enumerate(zip(batch_coords, batch_feats)):
-            pcd = PointCloud(coords)
+            pcd = PointCloud(coords.cpu())
             pcd.estimate_normals()
             pcd.translate([0.6 * config.resolution, 0, 0])
             pcd.rotate(M)
@@ -702,8 +698,7 @@ if __name__ == "__main__":
         train(net, dataloader, device, config)
     else:
         if not os.path.exists(config.weights):
-            logging.info(
-                f"Downloaing pretrained weights. This might take a while...")
+            logging.info(f"Downloaing pretrained weights. This might take a while...")
             urllib.request.urlretrieve(
                 "https://bit.ly/36d9m1n", filename=config.weights
             )

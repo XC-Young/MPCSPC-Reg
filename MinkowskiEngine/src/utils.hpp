@@ -32,7 +32,6 @@
 #include <vector>
 
 #ifndef CPU_ONLY
-#include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
 #endif
 
@@ -48,7 +47,7 @@ struct timer {
         .count();
   }
 
-  std::chrono::system_clock::time_point m_start;
+  std::chrono::high_resolution_clock::time_point m_start;
 };
 
 template <typename T>
@@ -69,11 +68,6 @@ std::ostream &print_vector(std::ostream &out, const T &v) {
 #ifndef CPU_ONLY
 template <typename T>
 std::ostream &operator<<(std::ostream &out, const thrust::host_vector<T> &v) {
-  return print_vector(out, v);
-}
-
-template <typename T>
-std::ostream &operator<<(std::ostream &out, const thrust::device_vector<T> &v) {
   return print_vector(out, v);
 }
 #endif
@@ -172,6 +166,7 @@ private:
 #else
 #define MINK_CUDA_HOST_DEVICE
 #define MINK_CUDA_DEVICE
+#define THRUST_CHECK(condition) condition;
 #endif
 
 #define COLOR "\033[31;1m"

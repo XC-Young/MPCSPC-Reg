@@ -23,7 +23,7 @@
 # of the code.
 import torch
 import numpy as np
-from collections import Sequence
+from collections.abc import Sequence
 import MinkowskiEngineBackend._C as MEB
 from typing import Union, Tuple
 from MinkowskiCommon import convert_to_int_list
@@ -120,6 +120,17 @@ def quantize_label(coords, labels, ignore_label):
         assert isinstance(labels, torch.Tensor)
         # Type check done inside
         return MEB.quantize_label_th(coords, labels.int(), ignore_label)
+
+
+def _auto_floor(array):
+    assert isinstance(
+        array, (np.ndarray, torch.Tensor)
+    ), "array must be either np.array or torch.Tensor."
+
+    if isinstance(array, np.ndarray):
+        return np.floor(array)
+    else:
+        return torch.floor(array)
 
 
 def sparse_quantize(
@@ -235,62 +246,53 @@ def sparse_quantize(
             ), "Quantization size and coordinates size mismatch."
             if isinstance(coordinates, np.ndarray):
                 quantization_size = np.array([i for i in quantization_size])
-                discrete_coordinates = np.floor(coordinates / quantization_size)
             else:
                 quantization_size = torch.Tensor([i for i in quantization_size])
-                discrete_coordinates = (coordinates / quantization_size).floor()
+            discrete_coordinates = _auto_floor(coordinates / quantization_size)
 
         elif np.isscalar(quantization_size):  # Assume that it is a scalar
 
             if quantization_size == 1:
-                discrete_coordinates = coordinates
+                discrete_coordinates = _auto_floor(coordinates)
             else:
-                discrete_coordinates = np.floor(coordinates / quantization_size)
+                discrete_coordinates = _auto_floor(coordinates / quantization_size)
         else:
             raise ValueError("Not supported type for quantization_size.")
     else:
-        discrete_coordinates = coordinates
+        discrete_coordinates = _auto_floor(coordinates)
 
-    discrete_coordinates = np.floor(discrete_coordinates)
     if isinstance(coordinates, np.ndarray):
         discrete_coordinates = discrete_coordinates.astype(np.int32)
     else:
         discrete_coordinates = discrete_coordinates.int()
 
-    if device == "cpu":
+    if (type(device) == str and device == "cpu") or (type(device) == torch.device and device.type == "cpu"):
         manager = MEB.CoordinateMapManagerCPU()
-    elif "cuda" in device:
+    elif (type(device) == str and "cuda" in device) or (type(device) == torch.device and device.type == "cuda"):
         manager = MEB.CoordinateMapManagerGPU_c10()
     else:
-        raise ValueError("Invalid device. Only `cpu` or `cuda` supported.")
+        raise ValueError("Invalid device. Only `cpu`, `cuda` or torch.device supported.")
 
     # Return values accordingly
     if use_label:
-        # unique_map, colabels = quantize_label(discrete_coordinates, labels, ignore_label)
-        tensor_stride = [1 for i in range(discrete_coordinates.shape[1] - 1)]
-        discrete_coordinates = (
-            discrete_coordinates.to(device)
-            if isinstance(discrete_coordinates, torch.Tensor)
-            else torch.from_numpy(discrete_coordinates).to(device)
-        )
-        _, (unique_map, inverse_map) = manager.insert_and_map(
-            discrete_coordinates, tensor_stride, ""
-        )
-
-        # assert (
-        #     device == "cpu"
-        # ), "CUDA accelerated quantization with labels not supported currently"
-
-        if return_maps_only:
-            if return_inverse:
-                return unique_map, inverse_map
-            else:
-                return unique_map
-
+        if isinstance(coordinates, np.ndarray):
+            unique_map, inverse_map, colabels = MEB.quantize_label_np(
+                discrete_coordinates, labels, ignore_label
+            )
+        else:
+            assert (
+                not discrete_coordinates.is_cuda
+            ), "Quantization with label requires cpu tensors."
+            assert not labels.is_cuda, "Quantization with label requires cpu tensors."
+            unique_map, inverse_map, colabels = MEB.quantize_label_th(
+                discrete_coordinates, labels, ignore_label
+            )
         return_args = [discrete_coordinates[unique_map]]
         if use_feat:
             return_args.append(features[unique_map])
-        return_args.append(labels[unique_map])
+        # Labels
+        return_args.append(colabels)
+        # Additional return args
         if return_index:
             return_args.append(unique_map)
         if return_inverse:

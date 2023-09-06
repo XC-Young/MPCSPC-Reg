@@ -53,15 +53,16 @@ try:
 except ImportError:
     raise ImportError("Pytorch not found. Please install pytorch first.")
 
-import warnings
 import codecs
 import os
 import re
 import subprocess
-from sys import argv, platform
-from setuptools import setup
-from torch.utils.cpp_extension import CppExtension, CUDAExtension, BuildExtension
+import warnings
 from pathlib import Path
+from sys import argv, platform
+
+from setuptools import setup
+from torch.utils.cpp_extension import BuildExtension, CppExtension, CUDAExtension
 
 if platform == "win32":
     raise ImportError("Windows is currently not supported.")
@@ -131,6 +132,9 @@ if not torch.cuda.is_available() and not FORCE_CUDA:
 
 CPU_ONLY = CPU_ONLY or not torch.cuda.is_available()
 if FORCE_CUDA:
+    print("--------------------------------")
+    print("| FORCE_CUDA set                |")
+    print("--------------------------------")
     CPU_ONLY = False
 
 # args with return value
@@ -172,18 +176,20 @@ else:
     CC_FLAGS += ["-fopenmp"]
 
 if "darwin" in platform:
-    CC_FLAGS += ["-stdlib=libc++"]
+    CC_FLAGS += ["-stdlib=libc++", "-std=c++17"]
 
 NVCC_FLAGS += ["--expt-relaxed-constexpr", "--expt-extended-lambda"]
 FAST_MATH, argv = _argparse("--fast_math", argv)
 if FAST_MATH:
     NVCC_FLAGS.append("--use_fast_math")
 
-BLAS_LIST = ["openblas", "mkl", "atlas", "blas"]
+BLAS_LIST = ["flexiblas", "openblas", "mkl", "atlas", "blas"]
 if not (BLAS is False):  # False only when not set, str otherwise
     assert BLAS in BLAS_LIST, f"Blas option {BLAS} not in valid options {BLAS_LIST}"
     if BLAS == "mkl":
         libraries.append("mkl_rt")
+        CC_FLAGS.append("-DUSE_MKL")
+        NVCC_FLAGS.append("-DUSE_MKL")
     else:
         libraries.append(BLAS)
     if not (BLAS_INCLUDE_DIRS is False):
@@ -265,7 +271,6 @@ SOURCE_SETS = {
 
 debug, argv = _argparse("--debug", argv)
 
-USE_NINJA = os.getenv("USE_NINJA") == "0"
 HERE = Path(os.path.dirname(__file__)).absolute()
 SRC_PATH = HERE / "src"
 
@@ -284,10 +289,10 @@ else:
 
 if debug:
     CC_FLAGS += ["-g", "-DDEBUG"]
-    NVCC_FLAGS += ["-g", "-DDEBUG"]
+    NVCC_FLAGS += ["-g", "-DDEBUG", "-Xcompiler=-fno-gnu-unique"]
 else:
     CC_FLAGS += ["-O3"]
-    NVCC_FLAGS += ["-O3"]
+    NVCC_FLAGS += ["-O3", "-Xcompiler=-fno-gnu-unique"]
 
 if "MAX_JOBS" not in os.environ and os.cpu_count() > MAX_COMPILATION_THREADS:
     # Clip the num compilation thread to 8
@@ -320,7 +325,7 @@ setup(
     package_dir={"MinkowskiEngine": "./MinkowskiEngine"},
     ext_modules=ext_modules,
     include_dirs=[str(SRC_PATH), str(SRC_PATH / "3rdparty"), *include_dirs],
-    cmdclass={"build_ext": BuildExtension},
+    cmdclass={"build_ext": BuildExtension.with_options(use_ninja=True)},
     author="Christopher Choy",
     author_email="chrischoy@ai.stanford.edu",
     description="a convolutional neural network library for sparse tensors",

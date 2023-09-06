@@ -29,6 +29,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <functional>
 #include <vector>
 
 #include "coordinate.hpp"
@@ -36,6 +37,7 @@
 #include "utils.hpp"
 
 #ifndef CPU_ONLY
+#include "allocators.cuh"
 #include "gpu.cuh"
 #endif
 
@@ -196,23 +198,51 @@ public:
   MINK_CUDA_HOST_DEVICE void
   coordinate_at(index_type kernel_index, coordinate_type const *src_coordinate,
                 coordinate_type *dst_coordinate) const {
-    // only for hypercube
     dst_coordinate[0] = src_coordinate[0];
-    for (index_type i = 0; i < m_coordinate_size - 1; ++i) {
-      auto const curr_kernel_size = m_kernel_size[i];
-      auto const curr_kernel_index = kernel_index % curr_kernel_size;
+    switch (m_region_type) {
+    case RegionType::HYPER_CUBE: {
+      for (index_type i = 0; i < m_coordinate_size - 1; ++i) {
+        auto const curr_kernel_size = m_kernel_size[i];
+        auto const curr_kernel_index = kernel_index % curr_kernel_size;
 
-      if (m_kernel_size[i] % 2 == 0) {
-        dst_coordinate[i + 1] =
-            src_coordinate[i + 1] +
-            m_dilation[i] * m_tensor_stride[i] * curr_kernel_index;
-      } else {
-        dst_coordinate[i + 1] =
-            src_coordinate[i + 1] +
-            (curr_kernel_index - int(curr_kernel_size / 2)) * m_dilation[i] *
-                m_tensor_stride[i];
+        if (m_kernel_size[i] % 2 == 0) {
+          dst_coordinate[i + 1] =
+              src_coordinate[i + 1] +
+              m_dilation[i] * m_tensor_stride[i] * curr_kernel_index;
+        } else {
+          dst_coordinate[i + 1] =
+              src_coordinate[i + 1] +
+              (curr_kernel_index - int(curr_kernel_size / 2)) * m_dilation[i] *
+                  m_tensor_stride[i];
+        }
+        kernel_index /= curr_kernel_size;
       }
-      kernel_index /= curr_kernel_size;
+    }
+    break;
+
+    case RegionType::HYPER_CROSS: { // can only be an odd kernel size
+      for (index_type i = 1; i < m_coordinate_size; ++i) {
+          dst_coordinate[i] = src_coordinate[i];
+      }
+      if (kernel_index == 0) break;
+      auto ind = kernel_index - 1;
+      index_type axis = 0;
+      while (axis < m_coordinate_size - 1)
+      {
+        if (ind < m_kernel_size[axis] - 1) break;
+        ind -= m_kernel_size[axis] - 1;
+        axis += 1;
+      }
+      auto const r = (m_kernel_size[axis] - 1) / 2;
+      coordinate_type coord_offset = (ind < r) ? (ind + 1) : (ind - 2 * r);
+      dst_coordinate[axis + 1] += coord_offset * m_dilation[axis] * 
+                  m_tensor_stride[axis];
+    }
+    break;
+    
+    case RegionType::CUSTOM:
+      // TODO
+      break;
     }
   }
 
@@ -240,7 +270,6 @@ private:
   }
 
 protected:
-  // flag indicating tensor_stride, kernel_size, dilation are on gpu
   bool m_is_transpose{false};
 
   RegionType::Type const m_region_type;
@@ -302,53 +331,58 @@ public:
   inline coordinate_type const *device_offset() const { return m_d_offset; }
 
   self_type const to_gpu() {
-    if (!m_on_gpu) {
-      // move the kernel_region to GPU
-      size_type num_bytes = (m_coordinate_size - 1) * 3 * sizeof(size_type);
-      if (m_region_type == RegionType::CUSTOM)
-        num_bytes +=
-            (m_coordinate_size - 1) * m_num_offset * sizeof(coordinate_type);
-
-      void *p_tmp = std::malloc(num_bytes);
-      size_type *p_size_type = reinterpret_cast<size_type *>(p_tmp);
-      coordinate_type *p_coordinate_type = reinterpret_cast<coordinate_type *>(
-          p_size_type + 3 * (m_coordinate_size - 1));
-
-      std::copy_n(m_tensor_stride, m_coordinate_size - 1, &p_size_type[0]);
-      std::copy_n(m_kernel_size, m_coordinate_size - 1,
-                  &p_size_type[m_coordinate_size - 1]);
-      std::copy_n(m_dilation, m_coordinate_size - 1,
-                  &p_size_type[2 * (m_coordinate_size - 1)]);
-
-      if (m_region_type == RegionType::CUSTOM) {
-        std::copy_n(m_offset, m_num_offset * (m_coordinate_size - 1),
-                    p_coordinate_type);
-      }
-
-      LOG_DEBUG("Copied", num_bytes, "bytes to contiguous memory.");
-      size_type *d_tmp;
-      CUDA_CHECK(cudaMalloc((void **)&d_tmp, num_bytes));
-      CUDA_CHECK(cudaMemcpy(d_tmp, p_tmp, num_bytes, cudaMemcpyHostToDevice));
-      // clang-format off
-      m_d_tensor_stride = d_tmp + 0 * (m_coordinate_size - 1);
-      m_d_kernel_size   = d_tmp + 1 * (m_coordinate_size - 1);
-      m_d_dilation      = d_tmp + 2 * (m_coordinate_size - 1);
-      m_d_offset        = reinterpret_cast<coordinate_type*>(d_tmp + 3 * (m_coordinate_size - 1));
-      // clang-format on
-
-      m_on_gpu = true;
-
-      std::free(p_tmp);
+    LOG_DEBUG("to_gpu");
+    if (m_on_gpu) {
+      return *this;
     }
+
+    // move the kernel_region to GPU
+    size_type num_bytes = (m_coordinate_size - 1) * 3 * sizeof(size_type);
+    if (m_region_type == RegionType::CUSTOM)
+      num_bytes +=
+          (m_coordinate_size - 1) * m_num_offset * sizeof(coordinate_type);
+
+    LOG_DEBUG("std::malloc", num_bytes);
+    void *p_tmp = std::malloc(num_bytes);
+    size_type *p_size_type = reinterpret_cast<size_type *>(p_tmp);
+    coordinate_type *p_coordinate_type = reinterpret_cast<coordinate_type *>(
+        p_size_type + 3 * (m_coordinate_size - 1));
+
+    std::copy_n(m_tensor_stride, m_coordinate_size - 1, &p_size_type[0]);
+    std::copy_n(m_kernel_size, m_coordinate_size - 1,
+                &p_size_type[m_coordinate_size - 1]);
+    std::copy_n(m_dilation, m_coordinate_size - 1,
+                &p_size_type[2 * (m_coordinate_size - 1)]);
+
+    if (m_region_type == RegionType::CUSTOM) {
+      std::copy_n(m_offset, m_num_offset * (m_coordinate_size - 1),
+                  p_coordinate_type);
+    }
+
+    LOG_DEBUG("Copied", num_bytes, "bytes to contiguous memory.");
+    // cache allocator
+    auto char_allocator = detail::c10_allocator<char>();
+    m_d_space = char_allocator.shared_allocate(num_bytes);
+    LOG_DEBUG("allocated", num_bytes);
+
+    CUDA_CHECK(
+        cudaMemcpy(m_d_space.get(), p_tmp, num_bytes, cudaMemcpyHostToDevice));
+    LOG_DEBUG("cudaMemcpy", num_bytes);
+    // clang-format off
+    size_type *size_d_space = reinterpret_cast<size_type*>(m_d_space.get());
+    m_d_tensor_stride = size_d_space + 0 * (m_coordinate_size - 1);
+    m_d_kernel_size   = size_d_space + 1 * (m_coordinate_size - 1);
+    m_d_dilation      = size_d_space + 2 * (m_coordinate_size - 1);
+    m_d_offset        = reinterpret_cast<coordinate_type*>(size_d_space + 3 * (m_coordinate_size - 1));
+    // clang-format on
+
+    m_on_gpu = true;
+    std::free(p_tmp);
     return *this;
   }
 
   inline bool on_gpu() const { return m_on_gpu; }
 
-  void clean() {
-    if (m_on_gpu)
-      CUDA_CHECK(cudaFree(m_d_tensor_stride));
-  }
 #endif
 
 protected:
@@ -368,7 +402,9 @@ protected:
 
   bool m_on_gpu{false};
 
-  // To move these to GPU, must move to gpu first
+  // To move itself to GPU. Must use to_gpu first before using these
+  std::shared_ptr<char[]> m_d_space;
+
   size_type *m_d_tensor_stride;
   size_type *m_d_kernel_size;
   size_type *m_d_dilation;
