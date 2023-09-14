@@ -35,9 +35,10 @@ Specifically, The code has been tested with:
   conda install pytorch==1.7.1 torchvision==0.8.2 torchaudio==0.7.2 cudatoolkit=11.1 -c pytorch
   ```
 
-- Third, install MinkowskiEngine for FCGF feature extraction, here we offer two ways according to [MinkowskiEngine](https://github.com/NVIDIA/MinkowskiEngine.git) by using the version we offered:
+- Third, install MinkowskiEngine for FCGF feature extraction:
 
   ```
+  git clone https://github.com/NVIDIA/MinkowskiEngine.git
   cd MinkowskiEngine
   conda install openblas-devel -c anaconda
   export CUDA_HOME=/usr/local/cuda-11.1
@@ -48,7 +49,7 @@ Specifically, The code has been tested with:
   Or following official command installation:
 
   ```
-  pip install git+https://github.com/NVIDIA/MinkowskiEngine.git
+  https://github.com/NVIDIA/MinkowskiEngine.git
   ```
 
 - Fourth, install other packages:
@@ -85,135 +86,67 @@ Datasets above contain the point clouds (.ply) and keypoints (.txt, 5000 per poi
 ```
 data/
 ├── origin_data/
-    ├── 3dmatch/
-    	└── kitchen/
+    ├── kitti_train/
+    	└── 0/
             ├── PointCloud/
             	├── cloud_bin_0.ply
-            	├── gt.log
-            	└── gt.info
+            	├── ..
+            	└── gt.log
             └── Keypoints/
             	└── cloud_bin_0Keypoints.txt
-    ├── 3dmatch_train/
-    ├── ETH/
-    └── WHU-TLS/
+    ├── CS/
+    └── CTCS/
 ```
 
-Pretrained weights we offer include FCGF Backbone, Part I and Part II. Which have been added to the main branch and organized following the structure as:
+Pretrained weights we offer include FCGF Backbone and msreg trained model. Which have been added to the main branch and organized following the structure as:
 
 ```
 model/
 ├── Backbone/
 	└── best_bal_checkpoint.pth
-├── PartI_train/
-	└── model_best.pth
-└── PartII_train/
+├── train/
 	└── model_best.pth
 ```
 
 ## Train
 
-To train YOHO, the group input of train set should be prepared using the FCGF model we offer, which is trained with rotation argument in [0,50] deg, by command:
+To train MSReg, the group input of train set should be prepared using the FCGF model we offer, which is retrained with our data enhancement, sepcifically, for pc0 and pc1: 1.ground truth alignment 2.add the same group element rotation; for pc1: add a random rotation of 45°. 
 
 ```
-python YOHO_trainset.py
+python trainset.py
 ```
 
-
-
-The training of YOHO is two-stage, you can run which with the commands sequentially:
+Then, you can train MSReg by the commands:
 
 ```
-python Train.py --Part PartI
-python Train.py --Part PartII
+python Train.py
 ```
 
-## Demo
-
-With the Pretrained/self-trained models, you can try YOHO with:
-
-```
-python YOHO_testset.py --dataset demo
-python Demo.py
-```
-
-## Test on the 3DMatch and 3DLoMatch
-
-To evalute YOHO on 3DMatch and 3DLoMatch:
+## Test on kitti
 
 - Prepare the testset:
   ```
-  python YOHO_testset.py --dataset 3dmatch --voxel_size 0.025
+  python testset.py --dataset kitti_test
   ```
 - Evaluate the results:
   ```
-  python Test.py --Part PartI  --max_iter 1000 --dataset 3dmatch    #YOHO-C on 3DMatch
-  python Test.py --Part PartI  --max_iter 1000 --dataset 3dLomatch  #YOHO-C on 3DLoMatch
-  python Test.py --Part PartII --max_iter 1000 --dataset 3dmatch    #YOHO-O on 3DMatch
-  python Test.py --Part PartII --max_iter 1000 --dataset 3dLomatch  #YOHO-O on 3DLoMatch
+  python Test.py --max_iter 1000 --dataset kitti --ransac_d 0.5 --tau 2
   ```
-  Where PartI is YOHO-C and PartII is YOHO-O, max_iter is the ransac times, PartI should be run first. All results will be stored in `./data/YOHO_FCGF`.
 
-## Generalize to the ETH dataset
+## Generalize to the CTCS and CS
 
-The generalization results on the outdoor ETH dataset can be got as follows:
+To evalute the generalization results of MSReg on CTCS and CS:
 
 - Prepare the testset:
-
   ```
-  python YOHO_testset.py --dataset ETH --voxel_size 0.15
+  python testset.py --dataset CTCS
   ```
-
-  If out of memory, you can
-
-  - Change the parameter `batch_size` in `YOHO_testset.py-->batch_feature_extraction()-->loader` from 4 to 1
-  - Carry out the command scene by scene by controlling the scene processed now in `utils/dataset.py-->get_dataset_name()-->if name==ETH`
-
 - Evaluate the results:
   ```
-  python Test.py --Part PartI  --max_iter 1000 --dataset ETH --ransac_d 0.2 --tau_2 0.2 --tau_3 0.5 #YOHO-C on ETH
-  python Test.py --Part PartII --max_iter 1000 --dataset ETH --ransac_d 0.2 --tau_2 0.2 --tau_3 0.5 #YOHO-O on ETH
-  ```
-  All the results will be placed to `./data/YOHO_FCGF`.
-
-## Generalize to the WHU-TLS dataset
-
-The generalization results on the outdoor WHU-TLS dataset can be got as follows:
-
-- Prepare the testset:
-
-  ```
-  python YOHO_testset.py --dataset WHU-TLS --voxel_size 0.8
+  python Test.py --max_iter 1000 --dataset CTCS --ransac_d 1.5 --tau 2 
+  python Test.py --max_iter 1000 --dataset CS --ransac_d 1.5 --tau 2 
   ```
 
-- Evaluate the results:
-  ```
-  python Test.py --Part PartI  --max_iter 1000 --dataset WHU-TLS --ransac_d 1 --tau_2 0.5 --tau_3 1 #YOHO-C on WHU-TLS
-  python Test.py --Part PartII --max_iter 1000 --dataset WHU-TLS --ransac_d 1 --tau_2 0.5 --tau_3 1 #YOHO-O on WHU-TLS
-  ```
-  All the results will be placed to `./data/YOHO_FCGF`.
-
-## Generalize to the KITTI dataset
-
-```
-python Test.py --Part PartI --max_iter 1000 --dataset kitti --ransac_d 0.5 --tau_2 2 #YOHO-C on KITTI
-python Test.py --Part PartII --max_iter 1000 --dataset kitti --ransac_d 0.5 --tau_2 2 #YOHO-O on KITTI
-
-python Test.py --Part PartI --max_iter 1000 --dataset kittistereo --ransac_d 1.5 --tau_2 2 #YOHO-C on KITTI_Stereo
-python Test.py --Part PartII --max_iter 1000 --dataset kittistereo --ransac_d 1.5 --tau_2 2 #YOHO-O on KITTI_Stereo
-
-python Test.py --Part PartI --max_iter 1000 --dataset kittisubseq --ransac_d 1.5 --tau_2 2 #YOHO-C on KITTI_Sub Sequence
-python Test.py --Part PartII --max_iter 1000 --dataset kittisubseq --ransac_d 1.5 --tau_2 2 #YOHO-O on KITTI_Sub Sequence
-
-python Test.py --Part PartI --max_iter 1000 --dataset kittiscst --ransac_d 1.5 --tau_2 2 #YOHO-C on KITTI_Scst
-python Test.py --Part PartII --max_iter 1000 --dataset kittiscst --ransac_d 1.5 --tau_2 2 #YOHO-O on KITTI_Scst
-
-python Test.py --Part PartI --max_iter 1000 --dataset kitti+360 --ransac_d 1.5 --tau_2 2 
-python Test.py --Part PartII --max_iter 1000 --dataset kitti+360 --ransac_d 1.5 --tau_2 2 
-```
-
-## Customize YOHO according to your needs
-
-To test YOHO on other datasets, or to implement YOHO using other backbones according to your needs, please refer to `./others/Readme.md`
 
 ## Related Projects
 
@@ -221,8 +154,8 @@ We sincerely thank the excellent projects:
 
 - [EMVN](http://github.com/daniilidis-group/emvn) for the group details;
 - [FCGF](https://github.com/chrischoy/FCGF) for the backbone;
-- [3DMatch](https://github.com/andyzeng/3dmatch-toolbox) for the 3DMatch dataset;
+- [YOHO](https://github.com/HpWang-whu/YOHO) for the backbone;
+- [Lac-GwcNet](https://github.com/SpadeLiu/Lac-GwcNet) for the stereo method;
+- [KITTI](https://www.cvlibs.net/datasets/kitti/) for the KITTI dataset;
+- [KITTI-360](https://www.cvlibs.net/datasets/kitti-360/) for the KITTI-360 dataset;
 - [Predator](https://github.com/overlappredator/OverlapPredator) for the 3DLoMatch dataset;
-- [ETH](https://projects.asl.ethz.ch/datasets/doku.php?id=laserregistration:laserregistration) for the ETH dataset;
-- [WHU-TLS](https://www.sciencedirect.com/science/article/pii/S0924271620300836) for the WHU-TLS dataset;
-- [PerfectMatch](https://github.com/zgojcic/3DSmoothNet) for organizing the 3DMatch and ETH dataset.

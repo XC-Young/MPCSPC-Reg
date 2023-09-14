@@ -3,3 +3,4 @@ knn_search
 MinkowskiEngine
 model
 __pycache__
+.vscode
