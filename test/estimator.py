@@ -145,10 +145,7 @@ class estimator:
         Save_dir=f'{match_dir}/MSReg/{max_iter}iters'
         make_non_exists_dir(Save_dir)
 
-        if dataset.name[0:4]=='3dLo':
-            datasetname=f'3d{dataset.name[4:]}'
-        else:
-            datasetname=dataset.name
+        datasetname=dataset.name
         Keys_dir=f'{self.cfg.origin_data_dir}/{datasetname}/Keypoints_PC'
 
         print(f'Ransac with MSReg on {dataset.name}:')
@@ -164,7 +161,7 @@ class estimator:
             Keys_m0=Keys0[pps[:,0]]
             Keys_m1=Keys1[pps[:,1]]
             #Disparities
-            if datasetname =='CS' or datasetname == 'CTCS':
+            if datasetname[0:2] == 'CS' or datasetname[0:4] == 'CTCS':
                 disps1 = np.load(f'{self.cfg.origin_data_dir}/{datasetname}/Disparity/disp_{id1}.npy')
                 disps_m1=disps1[pps[:,1]]
                 disps_m1 = 1/disps_m1
@@ -199,7 +196,7 @@ class estimator:
                     kps0_init=Keys_m0[idxs_init]
                     kps1_init=Keys_m1[idxs_init]
                     #if not ok:continue
-                    if datasetname == 'CS' or datasetname == 'CTCS':
+                    if datasetname[0:2] == 'CS' or datasetname[0:4] == 'CTCS':
                         if self.cfg.weight == False:
                             trans=self.Threepps2Tran(kps0_init,kps1_init)
                             overlap=self.overlap_cal(Keys_m0,Keys_m1,trans)
@@ -222,7 +219,7 @@ class estimator:
                         recall_time=iter_ransac
                 # refine:
                 refine_times = 10
-                if datasetname == 'CS' or datasetname == 'CTCS':
+                if datasetname[0:2] == 'CS' or datasetname[0:4] == 'CTCS':
                     if self.cfg.weight == False:
                         scores = np.ones([Keys_m0.shape[0]])
                     else:
@@ -328,7 +325,7 @@ class estimator_mul:
         pps=np.load(f'{match_dir}/{id0}-{id1}.npy')
         Keys_m0=Keys0[pps[:,0]]
         Keys_m1=Keys1[pps[:,1]]
-        if datasetname == 'CS' or datasetname == 'CTCS':
+        if datasetname[0:2] == 'CS' or datasetname[0:4] == 'CTCS':
             disps1 = np.load(f'{self.cfg.origin_data_dir}/{datasetname}/Disparity/disp_{id1}.npy')
             disps_m1=disps1[pps[:,1]]
             disps_m1 = 1/disps_m1
@@ -363,7 +360,7 @@ class estimator_mul:
                 idxs_init=np.random.choice(np.array(R_index_pre_statistic[R_index]),3) #guarantee the same index
                 kps0_init=Keys_m0[idxs_init]
                 kps1_init=Keys_m1[idxs_init]
-                if datasetname == 'CS' or datasetname == 'CTCS':
+                if datasetname[0:2] == 'CS' or datasetname[0:4] == 'CTCS':
                     if self.cfg.weight == False:
                         trans=self.Threepps2Tran(kps0_init,kps1_init)
                         overlap=self.overlap_cal(Keys_m0,Keys_m1,trans)
@@ -386,7 +383,7 @@ class estimator_mul:
                     recall_time=iter_ransac
             # refine:
             refine_times = 10
-            if datasetname == 'CS' or datasetname == 'CTCS':
+            if datasetname[0:2] == 'CS' or datasetname[0:4] == 'CTCS':
                 if self.cfg.weight == False:
                     scores = np.ones([Keys_m0.shape[0]])
                 else:

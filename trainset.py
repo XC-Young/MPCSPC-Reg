@@ -11,48 +11,40 @@ from utils.misc import extract_features
 import multiprocessing as mp
 
 class generate_trainset:
-  def __init__(self):
-    self.trainseq = [0,1,2,3,4,5]
-    self.valseq = [6,7]
-    self.basedir = f'./data/origin_data/kitti_train'
-    self.feat_train_dir = f'./data/cache/train'
-    make_non_exists_dir(self.feat_train_dir)
+    def __init__(self):
+        self.trainseq = [0,1,2,3,4,5]
+        self.valseq = [6,7]
+        self.basedir = f'./data/origin_data/kitti_train'
+        self.feat_train_dir = f'./data/cache/train'
+        make_non_exists_dir(self.feat_train_dir)
 
-    self.load_model()
-    self.G = np.load(f'./group_related/Rotation_8.npy')
-    self.knn = knn_module.KNN(1)
-    self.batchsize = 64
+        self.load_model()
+        self.G = np.load(f'./group_related/Rotation_8.npy')
+        self.knn = knn_module.KNN(1)
+        self.batchsize = 64
 
-  def loadset(self):
-    self.train = {}
-    for i in range(8):
-      seq = {
-        'pc':[],
-        'pair':{}
-      }
-      pair_fns = f'{self.basedir}/{i}/PointCloud/gt.log'
-      with open(pair_fns,'r') as f:
-        lines = f.readlines()
-        pair_num = len(lines)//5
-        for k in range(pair_num):
-            id0,id1=np.fromstring(lines[k*5],dtype=np.float32,sep=' ')[0:2]
-            id0=int(id0)
-            id1=int(id1)
-            row0=np.fromstring(lines[k*5+1],dtype=np.float32,sep=' ')
-            row1=np.fromstring(lines[k*5+2],dtype=np.float32,sep=' ')
-            row2=np.fromstring(lines[k*5+3],dtype=np.float32,sep=' ')
-            row3=np.fromstring(lines[k*5+4],dtype=np.float32,sep=' ')
-            transform=np.stack([row0,row1,row2,row3])
-            seq['pair'][f'{id0}-{id1}'] = transform
-            if not id0 in seq['pc']:
-                seq['pc'].append(id0)
-            if not id1 in seq['pc']:
-                seq['pc'].append(id1)
-      self.train[f'{i}'] = seq
+    def loadset(self):
+        self.train = {}
+        for i in range(8):
+            seq = {
+                'pc':[],
+                'pair':{}
+                }
+            pair_fns = glob.glob(f'/main/11_KITTI/01_odometry/icp/icp_train&valset/{i}_*') #for 555
+            for fn in pair_fns:
+                trans = np.load(fn)
+                pair = str.split(fn,'/')[-1][:-4]
+                pair = str.split(pair,'_')
+                assert int(pair[0]) == i
+                seq['pair'][f'{pair[1]}-{pair[2]}'] = trans
+                if not pair[1] in seq['pc']:
+                    seq['pc'].append(pair[1])
+                if not pair[2] in seq['pc']:
+                    seq['pc'].append(pair[2])
+            self.train[f'{i}'] = seq
 
-  def gt_match(self):
-    #   for seqs in [self.trainseq, self.valseq]:
-      for seqs in [self.valseq]:
+    def gt_match(self):
+      for seqs in [self.trainseq, self.valseq]:
           for i in seqs:
               seq = self.train[f'{i}']
               savedir = f'{self.feat_train_dir}/{i}/gt_match'
@@ -80,7 +72,7 @@ class generate_trainset:
                   save_fn = f'{savedir}/{id0}_{id1}.npy'
                   np.save(save_fn, pair)
 
-  def load_model(self):
+    def load_model(self):
       checkpoint = torch.load('./model/Backbone/best_val_checkpoint.pth')
       config = checkpoint['config']
       Model = load_model(config.model)
@@ -97,7 +89,7 @@ class generate_trainset:
       self.model.load_state_dict(checkpoint['state_dict'])
       self.model.eval()
 
-  def generate_scan_gfeats(self,pc,key):
+    def generate_scan_gfeats(self,pc,key):
       feats = []
       if pc.shape[0]>40000:
           index = np.arange(pc.shape[0])
@@ -128,7 +120,7 @@ class generate_trainset:
       feats = np.concatenate(feats, axis=-1)#kn*32*8
       return feats
 
-  def R2DR_id(self,R):
+    def R2DR_id(self,R):
       min_diff=180
       best_id=0
       for R_id in range(self.G.shape[0]):
@@ -138,115 +130,75 @@ class generate_trainset:
               best_id=R_id
       return best_id
 
-  def DeltaR(self,R,index):
+    def DeltaR(self,R,index):
       R_anchor=self.G[index]#3*3
       #R=Rres@Ranc->Rres=R@Ranc.T
       deltaR=R@R_anchor.T
       return quaternion_from_matrix(deltaR)
 
-  def train_feats(self):
-    #   batchsavedir = f'{self.feat_train_dir}/train_val_batch/trainset'
-    #   make_non_exists_dir(batchsavedir)
-      featsavedir = f'{self.feat_train_dir}/train_feats'
-      make_non_exists_dir(featsavedir)
-      scannum = 0
-      all_Rs, all_Rids, all_Rres, all_feats0, all_feats1 = [],[],[],[],[]
-      for i in self.trainseq:
-          seq = self.train[f'{i}']
-          for pair, trans in tqdm(seq['pair'].items()):
-              id0,id1=str.split(pair,'-')
-              pc0 = np.load(f'{self.basedir}/{i}/PointCloud/cloud_bin_{id0}.npy')
-              pc1 = np.load(f'{self.basedir}/{i}/PointCloud/cloud_bin_{id1}.npy')
-              key_idx0 = np.loadtxt(f'{self.basedir}/{i}/Keypoints/cloud_bin_{id0}Keypoints.txt').astype(np.int64)
-              key_idx1 = np.loadtxt(f'{self.basedir}/{i}/Keypoints/cloud_bin_{id1}Keypoints.txt').astype(np.int64)
-              key0 = pc0[key_idx0]
-              key1 = pc1[key_idx1]
-              R_base = random_rotation_zgroup()
-              # gt alignment
-              pc0 = apply_transform(pc0, trans) 
-              key0 = apply_transform(key0, trans)
-              # 1.random z rotation to pc0&pc1 2.group rot to pc1 3.residual rot to pc1
-              R_z = random_z_rotation(180)
-              R_45 = random_z_rotation(45)
-              pc0 = pc0@R_z.T
-              pc1 = ((pc1@R_z.T)@R_base.T)@R_45.T
-              key0 = key0@R_z.T
-              key1 = ((key1@R_z.T)@R_base.T)@R_45.T
-              # added rot
-              R = R_45@R_base
-              R_index = self.R2DR_id(R)
-              R_residual = self.DeltaR(R,R_index)
-              #gennerate rot feats
-              feats0 = self.generate_scan_gfeats(pc0, key0) #5000*32*8
-              feats1 = self.generate_scan_gfeats(pc1, key1)
+    def generate_batches(self, start = 0):
+        batchsavedir = f'{self.feat_train_dir}/train_val_batch/trainset'
+        make_non_exists_dir(batchsavedir)
+        batch_i = start
+        for i in self.trainseq:
+            seq = self.train[f'{i}']
+            for pair, trans in tqdm(seq['pair'].items()):
+                id0,id1=str.split(pair,'-')
+                pc0 = np.load(f'{self.basedir}/{i}/PointCloud/cloud_bin_{id0}.npy')
+                pc1 = np.load(f'{self.basedir}/{i}/PointCloud/cloud_bin_{id1}.npy')
+                key_idx0 = np.loadtxt(f'{self.basedir}/{i}/Keypoints/cloud_bin_{id0}Keypoints.txt').astype(np.int64)
+                key_idx1 = np.loadtxt(f'{self.basedir}/{i}/Keypoints/cloud_bin_{id1}Keypoints.txt').astype(np.int64)
+                key0 = pc0[key_idx0]
+                key1 = pc1[key_idx1]
+                R_base = random_rotation_zgroup()
+                # gt alignment
+                pc0 = apply_transform(pc0, trans) 
+                key0 = apply_transform(key0, trans)
+                # 1.random z rotation to pc0&pc1 2.group rot to pc1 3.residual rot to pc1
+                R_z = random_z_rotation(180)
+                R_45 = random_z_rotation(45)
+                pc0 = pc0@R_z.T
+                pc1 = ((pc1@R_z.T)@R_base.T)@R_45.T
+                key0 = key0@R_z.T
+                key1 = ((key1@R_z.T)@R_base.T)@R_45.T
+                # added rot
+                R = R_45@R_base
+                R_index = self.R2DR_id(R)
+                R_residual = self.DeltaR(R,R_index)
 
-              pt_pair = np.load(f'{self.feat_train_dir}/{i}/gt_match/{id0}_{id1}.npy').astype(np.int32)
-              index = np.arange(pt_pair.shape[0])
-              np.random.shuffle(index)
-              index = index[0:self.batchsize]
-              pt_pair = pt_pair[index]
-              # paired feats
-              feats0 = feats0[pt_pair[:,0],:,:] #64*32*8
-              feats1 = feats1[pt_pair[:,1],:,:]
-              # save
-              all_Rs.append(R[None,:,:])
-              all_Rids.append(R_index)
-              all_Rres.append(R_residual[None,:])
-              all_feats0.append(feats0[None,:,:])
-              all_feats1.append(feats1[None,:,:])
-              scannum += 1
-      np.save(f'{featsavedir}/Rs.npy', np.concatenate(all_Rs,axis=0))
-      np.save(f'{featsavedir}/Rids.npy', np.array(all_Rids))
-      np.save(f'{featsavedir}/Rres.npy', np.concatenate(all_Rres,axis=0))
-      np.save(f'{featsavedir}/feats0.npy', np.concatenate(all_feats0,axis=0))
-      np.save(f'{featsavedir}/feats1.npy', np.concatenate(all_feats1,axis=0))
-    #   all_Rs = np.concatenate(all_Rs,axis=0)
-    #   all_Rids = np.array(all_Rids)
-    #   all_Rres = np.concatenate(all_Rres,axis=0)
-    #   all_feats0 = np.concatenate(all_feats0,axis=0)
-    #   all_feats1 = np.concatenate(all_feats1,axis=0)
+                batch_Rs, batch_Rids, batch_Rres = [],[],[]
+                for b in range(self.batchsize):
+                    batch_Rs.append(R[None,:,:])
+                    batch_Rids.append(R_index)
+                    batch_Rres.append(R_residual[None,:])
+                batch_Rs = np.concatenate(batch_Rs, axis=0)
+                batch_Rids = np.array(batch_Rids)
+                batch_Rres = np.concatenate(batch_Rres, axis=0)
+                #gennerate rot feats
+                feats0 = self.generate_scan_gfeats(pc0, key0) #5000*32*8
+                feats1 = self.generate_scan_gfeats(pc1, key1)
 
-  def generate_batches(self, start = 0):
-      batchsavedir = f'{self.feat_train_dir}/train_val_batch/trainset'
-      make_non_exists_dir(batchsavedir)
-      featsavedir = f'{self.feat_train_dir}/train_feats'
-      # Generate batch by random combination
-      batch_i = start
-      all_Rs = np.load(f'{featsavedir}/Rs.npy')
-      all_Rids = np.load(f'{featsavedir}/Rids.npy')
-      all_Rres = np.load(f'{featsavedir}/Rres.npy')
-      all_feats0 = np.load(f'{featsavedir}/feats0.npy')
-      all_feats1 = np.load(f'{featsavedir}/feats1.npy')
-      scannum = len(all_Rids)
-      for i in tqdm(range(scannum)):
-          batch_num = random.sample(range(0,scannum),self.batchsize)
-          b_feats0s,b_feats1s, b_Rs, b_Rids, b_Rres = [],[],[],[],[]
-          for j in range(self.batchsize):
-              feats_num = np.random.randint(0,self.batchsize)
-              batch_idx = batch_num[j]
-              s_R = all_Rs[batch_idx]
-              s_Rid = all_Rids[batch_idx]
-              s_Rre = all_Rres[batch_idx]
-              s_feats0 = all_feats0[batch_idx]
-              s_feats0 = s_feats0[feats_num]
-              s_feats1 = all_feats1[batch_idx]
-              s_feats1 = s_feats1[feats_num]
-              b_Rs.append(s_R)
-              b_Rids.append(s_Rid)
-              b_Rres.append(s_Rre)
-              b_feats0s.append(s_feats0)
-              b_feats1s.append(s_feats1)
-          item = {
-            'feats0':torch.from_numpy(np.array(b_feats0s).astype(np.float32)), #before enhanced rot
-            'feats1':torch.from_numpy(np.array(b_feats1s).astype(np.float32)), #after enhanced rot
-            'R':torch.from_numpy(np.array(b_Rs).astype(np.float32)),
-            'true_idx':torch.from_numpy(np.array(b_Rids).astype(np.int)),
-            'deltaR':torch.from_numpy(np.array(b_Rres).astype(np.float32))
-          }
-          torch.save(item,f'{batchsavedir}/{batch_i}.pth',_use_new_zipfile_serialization=False)
-          batch_i += 1
+                pt_pair = np.load(f'{self.feat_train_dir}/{i}/gt_match/{id0}_{id1}.npy').astype(np.int32)
+                index = np.arange(pt_pair.shape[0])
+                np.random.shuffle(index)
+                index = index[0:self.batchsize]
+                pt_pair = pt_pair[index]
+                # paired feats
+                feats0 = feats0[pt_pair[:,0],:,:] #64*32*8
+                feats1 = feats1[pt_pair[:,1],:,:]
 
-  def generate_val_batches(self, vallen = 3000):
+                item={
+                        'feats0':torch.from_numpy(feats0.astype(np.float32)), #before enhanced rot
+                        'feats1':torch.from_numpy(feats1.astype(np.float32)), #after enhanced rot
+                        'R':torch.from_numpy(batch_Rs.astype(np.float32)),
+                        'true_idx':torch.from_numpy(batch_Rids.astype(np.int)),
+                        'deltaR':torch.from_numpy(batch_Rres.astype(np.float32))
+                    }
+                # save
+                torch.save(item,f'{batchsavedir}/{batch_i}.pth',_use_new_zipfile_serialization=False)
+                batch_i += 1
+
+    def generate_val_batches(self, vallen = 3000):
       batchsavedir = f'{self.feat_train_dir}/train_val_batch/valset'
       make_non_exists_dir(batchsavedir)
       # generate matches
@@ -304,7 +256,7 @@ class generate_trainset:
           batch_i += 1
       
               
-  def trainval_list(self):
+    def trainval_list(self):
       traindir = f'{self.feat_train_dir}/train_val_batch/trainset'
       valdir = f'{self.feat_train_dir}/train_val_batch/valset'
       trainlist = glob.glob(f'{traindir}/*.pth')
@@ -316,7 +268,6 @@ if __name__=='__main__':
     generator = generate_trainset()
     generator.loadset()
     generator.gt_match()
-    generator.train_feats()
     for i in range(3):
         generator.generate_batches(start = len(glob.glob(f'{generator.feat_train_dir}/train_val_batch/trainset/*.pth')))
     generator.generate_val_batches()

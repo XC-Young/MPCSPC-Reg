@@ -71,14 +71,14 @@ Specifically, The code has been tested with:
 The datasets and pretrained weights have been uploaded to Google Cloud:
 
 For training:
-- [KITTI_train](https://drive.google.com/file/d/1mfnGL8pRvc6Rw6m6YnvNKdbpGxGJ081G/view?usp=sharing);
+- [KITTI_train]( );
 
 For testing:
-- [CTCS](https://drive.google.com/file/d/1UzGBPce5VspD2YIj7zWrrJYjsImSEc-5/view?usp=sharing);
-- [CS](https://drive.google.com/file/d/1hyurp5EOzvWGFB0kOl5Qylx1xGelpxaQ/view?usp=sharing);
+- [CTCS]( );
+- [CS]( );
 
 Pretained model:
-- [Pretrained Weights](https://drive.google.com/file/d/1J-nkut2A66fyOQu0B0723yCfRiJLSG4O/view?usp=sharing). (Already added to the main branch.)
+- [Pretrained Weights]( ). (Already added to the main branch.)
 
 
 Datasets above contain the point clouds (.ply) and keypoints (.txt, 5000 per point cloud) files. Please place the data to `./data/origin_data` following the example data structure as:
