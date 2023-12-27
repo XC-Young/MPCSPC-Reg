@@ -74,11 +74,11 @@ For training:
 - [KITTI_train]( );
 
 For testing:
-- [CTCS]( );
-- [CS]( );
+- [CTCS](https://drive.google.com/file/d/1EH6BFVfkvTD29i2-MNrZSELCDBzxCBv1/view?usp=drive_link);
+- [CS](https://drive.google.com/file/d/1EH6BFVfkvTD29i2-MNrZSELCDBzxCBv1/view?usp=drive_link);
 
 Pretained model:
-- [Pretrained Weights]( ). (Already added to the main branch.)
+- [Pretrained Weights](https://drive.google.com/file/d/1AbAQVI58WXtNN_xouKcPFunaV_iT94Yr/view?usp=drive_link ). 
 
 
 Datasets above contain the point clouds (.ply) and keypoints (.txt, 5000 per point cloud) files. Please place the data to `./data/origin_data` following the example data structure as:
