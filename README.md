@@ -140,6 +140,7 @@ To evalute the generalization results of MSReg on CTCS and CS:
 - Prepare the testset:
   ```
   python testset.py --dataset CTCS
+  python testset.py --dataset CS
   ```
 - Evaluate the results:
   ```

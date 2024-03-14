@@ -32,14 +32,13 @@ class generate_testset:
 
     def loadset(self):
         self.test = {}
-        a = int(self.testseq[0])
-        b = int(self.testseq[-1])+1
-        for i in range(a,b):
+        for i in range(len(self.testseq)):
+            sence = self.testseq[i]
             seq = {
                     'pc':[],
                     'pair':{}
                     }
-            fn = f'{self.basedir}/{i}/PointCloud/gt.log'
+            fn = f'{self.basedir}/{sence}/PointCloud/gt.log'
             with open(fn,'r') as f:
                 lines = f.readlines()
                 pair_num = len(lines)//5
@@ -57,7 +56,7 @@ class generate_testset:
                         seq['pc'].append(id0)
                     if not id1 in seq['pc']:
                         seq['pc'].append(id1)
-            self.test[f'{i}'] = seq
+            self.test[f'{sence}'] = seq
 
     def load_model(self):
         checkpoint = torch.load('./model/Backbone/best_val_checkpoint.pth')
@@ -116,7 +115,8 @@ class generate_testset:
           for pc in tqdm(seq['pc']):
             feats = []
             # load pointcloud and keypoints
-            xyz = np.load(f'{self.basedir}/{i}/PointCloud/cloud_bin_{pc}.npy')
+            ply = o3d.io.read_point_cloud(f'{self.basedir}/{i}/PointCloud/cloud_bin_{pc}.ply')
+            xyz = np.array(ply.points)
             key = np.load(f'{self.basedir}/{i}/Keypoints_PC/cloud_bin_{pc}Keypoints.npy')
             feats = self.generate_scan_gfeats(xyz, key)
             np.save(f'{savedir}/{pc}.npy', feats)
