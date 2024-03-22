@@ -75,6 +75,8 @@ class evaluator:
         whole_all_num=0
         whole_rre=[]
         whole_rte=[]
+        t=2
+        r=5
         for name,dataset in datasets.items():
             if name=='wholesetname':
                 continue
@@ -89,13 +91,13 @@ class evaluator:
                 tdiff = np.linalg.norm(pre[0:3,-1]-gt[0:3,-1])
                 Rdiff=compute_R_diff(gt[0:3,0:3],pre[0:3,0:3])
                 
-                if tdiff<=2 and Rdiff<=5:
+                if tdiff<=t and Rdiff<=r:
                     oknum+=1
                     writer.write(f'{int(id0)}\t{int(id1)}\tSucceed!\t')
                     writer.write(f'RRE:{Rdiff}\tRTE:{tdiff}\n')
-                    if Rdiff<5:
+                    if Rdiff<r:
                         whole_rre.append(Rdiff)
-                    if tdiff<2:
+                    if tdiff<t:
                         whole_rte.append(tdiff)
                 else:
                     writer.write(f'{int(id0)}\t{int(id1)}\tFailed...\t')
